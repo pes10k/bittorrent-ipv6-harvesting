@@ -135,6 +135,7 @@ def http_announce(tracker, info_hash, ip_address=None, size=None):
         return ipv6_addresses
 
     if "failure reason" in response:
+        print r.url
         print " ! {0}".format(response["failure reason"])
         return ipv6_addresses
 
@@ -213,17 +214,16 @@ def parse_torrent(torrent_path):
 
 def parse_magnet_uri(uri):
     parsed_uri = urlparse.urlparse(uri)
-    params = urlparse.parse_qs(parsed_uri.query)
+    params = urlparse.parse_qs(parsed_uri.query or parsed_uri.path[1:])
     try:
         trackers = params['tr']
     except KeyError:
         trackers = None
 
     try:
-        info_hash = binascii.a2b_hex(params['xt'].replace("urn:btih:", ''))
+        info_hash = binascii.a2b_hex(params['xt'][0].replace("urn:btih:", ''))
     except KeyError:
         info_hash = None
-
     return trackers, info_hash, 0
 
 
@@ -242,14 +242,13 @@ if __name__ == "__main__":
 
     if args.magnet:
         trackers, info_hash, size = parse_magnet_uri(args.magnet)
-    if args.torrent:
+    elif args.torrent:
         trackers, info_hash, size = parse_torrent(args.torrent)
     else:
         trackers = [args.tracker]
         info_hash = args.hash
         size = 0
 
-    print trackers
     ipv6_addresses = []
     for t in trackers:
         print "Annoucing for {0} on {1}".format(binascii.b2a_hex(info_hash), t)
