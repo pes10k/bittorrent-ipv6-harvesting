@@ -7,8 +7,9 @@ import scraper
 import bencode
 import hashlib
 import ipaddress
+import urlparse
 from pprint import pprint
-from urlparse import urlparse
+
 
 def udp_create_announce_request(connection_id, torrent_hash, ip_address=None):
 
@@ -76,7 +77,7 @@ def udp_create_announce_response(buf, sent_transaction_id, torrent_hash):
 
 
 def udp_announce(tracker, torrent_hash, ip_address=None):
-    parsed_tracker = urlparse(tracker)
+    parsed_tracker = urlparse.urlparse(tracker)
     transaction_id = "\x00\x00\x04\x12\x27\x10\x19\x70"
     connection_id = "\x00\x00\x04\x17\x27\x10\x19\x80"
     sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
@@ -166,7 +167,7 @@ def ips_for_tracker(**kwargs):
     except KeyError:
         ip_address = None
 
-    parsed_tracker = urlparse(tracker)
+    parsed_tracker = urlparse.urlparse(tracker)
     if parsed_tracker.scheme == "udp":
         try:
             return udp_announce(tracker, info_hash, ip_address=ip_address)
@@ -175,13 +176,6 @@ def ips_for_tracker(**kwargs):
             return []
     elif parsed_tracker.scheme in ["http", "https"]:
         return http_announce(tracker, info_hash, ip_address=ip_address)
-
-def parse_magnet_uri(uri):
-    import libtorrent as lt
-    info = lt.parse_magnet_uri(uri)
-    pprint(info)
-    import sys
-    sys.exit()
 
 def parse_torrent(torrent_path):
     """Reads a tracker from disk and returns metadata information about it,
@@ -217,6 +211,22 @@ def parse_torrent(torrent_path):
 
     return trackers, info_hash, size
 
+def parse_magnet_uri(uri):
+    parsed_uri = urlparse.urlparse(uri)
+    params = urlparse.parse_qs(parsed_uri.query)
+    try:
+        trackers = params['tr']
+    except KeyError:
+        trackers = None
+
+    try:
+        info_hash = binascii.a2b_hex(params['xt'].replace("urn:btih:", ''))
+    except KeyError:
+        info_hash = None
+
+    return trackers, info_hash, 0
+
+
 def generate_peer_id():
     return '-PS1234-' + ''.join(chr(random.randint(0,255)) for i in range(12))
 
@@ -231,7 +241,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.magnet:
-        parse_magnet_uri(args.magnet)
+        trackers, info_hash, size = parse_magnet_uri(args.magnet)
     if args.torrent:
         trackers, info_hash, size = parse_torrent(args.torrent)
     else:
