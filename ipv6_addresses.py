@@ -21,9 +21,7 @@ def udp_create_announce_request(connection_id, torrent_hash, ip_address=None):
     buf += struct.pack("!i", transaction_id) #followed by 4 byte transaction id
 
     # Add torrent hash
-    hex_repr = binascii.a2b_hex(torrent_hash)
-    buf += struct.pack("!20s", hex_repr)
-
+    buf += struct.pack("!20s", binascii.b2a_hex(torrent_hash))
     buf += struct.pack("!20s", generate_peer_id()) # Add peer_id
 
     buf += struct.pack("!q", 0) # download value
@@ -31,14 +29,15 @@ def udp_create_announce_request(connection_id, torrent_hash, ip_address=None):
     buf += struct.pack("!q", 0) # uploaded value
 
     buf += struct.pack("!i", 0) # event value
-    buf += struct.pack("!16s", ip_address or 0) # ip address value value
+    if ip_address:
+        ip_add_obj = ipaddress.ip_address(unicode(ip_address))
+        buf += struct.pack("!16s", binascii.b2a_hex(ip_add_obj.packed))
+    else:
+        buf += struct.pack("!q2", 0)
 
     buf += struct.pack("!i", 0) # key value value
     buf += struct.pack("!i", 50) # num_want value
     buf += struct.pack("!h", 9999) # port value
-
-    print "OUT"
-    print binascii.b2a_hex(buf)
 
     return (buf, transaction_id)
 
@@ -55,13 +54,8 @@ def udp_create_announce_response(buf, sent_transaction_id, torrent_hash):
         raise RuntimeError("Transaction ID doesnt match in scrape response! Expected %s, got %s" % (sent_transaction_id, res_transaction_id))
 
     ip6s = []
-    print "IN"
-    print binascii.b2a_hex(buf)
-    pprint(buf)
 
     if action == 0x1:
-        print binascii.b2a_uu(buf)
-
         offset = 20
         while offset < buf_len:
             ip = buf[offset:offset+16]
@@ -83,7 +77,6 @@ def udp_announce(tracker, torrent_hash, ip_address=None):
     sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
     sock.settimeout(8)
     ip_data = socket.getaddrinfo(parsed_tracker.hostname, parsed_tracker.port)
-
     dest_ip = None
     dest_port = None
     for family, socktype, proto, canonname, sockaddr in ip_data:
@@ -104,7 +97,7 @@ def udp_announce(tracker, torrent_hash, ip_address=None):
     connection_id = scraper.udp_parse_connection_response(buf, transaction_id)
 
     #Scrape away
-    req, transaction_id = udp_create_announce_request(connection_id, torrent_hash)
+    req, transaction_id = udp_create_announce_request(connection_id, torrent_hash, ip_address=ip_address)
     sock.sendto(req, conn)
     buf = sock.recvfrom(2048)[0]
     return udp_create_announce_response(buf, transaction_id, torrent_hash)
@@ -252,7 +245,7 @@ if __name__ == "__main__":
     ipv6_addresses = []
     for t in trackers:
         print "Annoucing for {0} on {1}".format(binascii.b2a_hex(info_hash), t)
-        found_addrs = ips_for_tracker(hash=info_hash, tracker=t, ip_address=args.ip)
+        found_addrs = ips_for_tracker(hash=info_hash, tracker=t, ip=args.ip)
         print " * Found {0} addresses".format(len(found_addrs))
         ipv6_addresses += found_addrs
 
