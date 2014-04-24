@@ -8,7 +8,6 @@ import hashlib
 import ipaddress
 import urlparse
 import spider
-from pprint import pprint
 
 def udp_create_connection_request():
     connection_id = 0x41727101980 #default connection id
@@ -266,7 +265,7 @@ if __name__ == "__main__":
     parser.add_argument('--ip', help="The IPv6 address to report announcing from.", default=None)
     args = parser.parse_args()
 
-    output = open(args.output, 'a') if args.output else sys.stdout
+    output = open(args.output, 'aw') if args.output else sys.stdout
 
     if args.magnetpage:
         magnet_urls = spider.magnet_uris_on_url(args.magnetpage)
