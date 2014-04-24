@@ -266,6 +266,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Fetch IP addresses feeding a magetnet link.')
     parser.add_argument('--output', default=None, help="If provided, a path to write found addresses to.")
+    parser.add_argument('--magnetpages', default=None, help="A file to read from, with urls to fetch magnet urls from.")
     parser.add_argument('--magnetpage', default=None, help="A URL to scape for magnet urls")
     parser.add_argument('--hash')
     parser.add_argument('--tracker')
@@ -278,7 +279,15 @@ if __name__ == "__main__":
 
     output = open(args.output, 'aw') if args.output else sys.stdout
 
-    if args.magnetpage:
+    if args.magnetpages:
+        magnet_urls = []
+        with open(args.magnetpages, 'r') as h:
+            for line in h:
+                local_urls = spider.magnet_uris_on_url(line.strip()) 
+                print " * Found {0} urls in {1}".format(len(local_urls), line)
+                magnet_urls += local_urls
+        work = [parse_magnet_uri(murl) for murl in set(magnet_urls)]
+    elif args.magnetpage:
         magnet_urls = spider.magnet_uris_on_url(args.magnetpage)
         work = [parse_magnet_uri(murl) for murl in magnet_urls]
     elif args.magnet:
