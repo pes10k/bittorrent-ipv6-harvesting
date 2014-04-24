@@ -3,19 +3,30 @@ import random
 import struct
 import socket
 import binascii
-import scraper
 import bencode
 import hashlib
 import ipaddress
 import urlparse
+import spider
 from pprint import pprint
 
+def udp_create_connection_request():
+    connection_id = 0x41727101980 #default connection id
+    action = 0x0 #action (0 = give me a new connection id)
+    transaction_id = udp_get_transaction_id()
+    buf = struct.pack("!q", connection_id) #first 8 bytes is connection id
+    buf += struct.pack("!i", action) #next 4 bytes is action
+    buf += struct.pack("!i", transaction_id) #next 4 bytes is transaction id
+    return (buf, transaction_id)
+
+def udp_get_transaction_id():
+    return int(random.randrange(0, 255))
 
 def udp_create_announce_request(connection_id, torrent_hash, ip_address=None):
 
     # Taken from http://www.bittorrent.org/beps/bep_0015.html
     action = 0x1 #action (1 = announce)
-    transaction_id = scraper.udp_get_transaction_id()
+    transaction_id = udp_get_transaction_id()
     buf = struct.pack("!q", connection_id) #first 8 bytes is connection id
     buf += struct.pack("!i", action) #next 4 bytes is action
     buf += struct.pack("!i", transaction_id) #followed by 4 byte transaction id
@@ -70,6 +81,24 @@ def udp_create_announce_response(buf, sent_transaction_id, torrent_hash):
         raise RuntimeError("Error while scraping: %s" % error)
 
 
+def udp_parse_connection_response(buf, sent_transaction_id):
+    if len(buf) < 16:
+        raise RuntimeError("Wrong response length getting connection id: %s" % len(buf))
+    action = struct.unpack_from("!i", buf)[0] #first 4 bytes is action
+
+    res_transaction_id = struct.unpack_from("!i", buf, 4)[0] #next 4 bytes is transaction id
+    if res_transaction_id != sent_transaction_id:
+        raise RuntimeError("Transaction ID doesnt match in connection response! Expected %s, got %s"
+            % (sent_transaction_id, res_transaction_id))
+
+    if action == 0x0:
+        connection_id = struct.unpack_from("!q", buf, 8)[0] #unpack 8 bytes from byte 8, should be the connection_id
+        return connection_id
+    elif action == 0x3:
+        error = struct.unpack_from("!s", buf, 8)
+        raise RuntimeError("Error while trying to get a connection response: %s" % error)
+    pass
+
 def udp_announce(tracker, torrent_hash, ip_address=None):
     parsed_tracker = urlparse.urlparse(tracker)
     transaction_id = "\x00\x00\x04\x12\x27\x10\x19\x70"
@@ -91,10 +120,10 @@ def udp_announce(tracker, torrent_hash, ip_address=None):
 
     conn = (dest_ip, dest_port)
     #Get connection ID
-    req, transaction_id = scraper.udp_create_connection_request()
+    req, transaction_id = udp_create_connection_request()
     sock.sendto(req, conn);
     buf = sock.recvfrom(2048)[0]
-    connection_id = scraper.udp_parse_connection_response(buf, transaction_id)
+    connection_id = udp_parse_connection_response(buf, transaction_id)
 
     #Scrape away
     req, transaction_id = udp_create_announce_request(connection_id, torrent_hash, ip_address=ip_address)
@@ -225,7 +254,11 @@ def generate_peer_id():
 
 if __name__ == "__main__":
     import argparse
+    import sys
+
     parser = argparse.ArgumentParser(description='Fetch IP addresses feeding a magetnet link.')
+    parser.add_argument('--output', default=None, help="If provided, a path to write found addresses to.")
+    parser.add_argument('--magnetpage', default=None, help="A URL to scape for magnet urls")
     parser.add_argument('--hash')
     parser.add_argument('--tracker')
     parser.add_argument('--magnet', default=None, help="A magenet link to parse for torrent information.")
@@ -233,20 +266,26 @@ if __name__ == "__main__":
     parser.add_argument('--ip', help="The IPv6 address to report announcing from.", default=None)
     args = parser.parse_args()
 
-    if args.magnet:
-        trackers, info_hash, size = parse_magnet_uri(args.magnet)
+    output = open(args.output, 'a') if args.output else sys.stdout
+
+    if args.magnetpage:
+        magnet_urls = spider.magnet_uris_on_url(args.magnetpage)
+        work = [parse_magnet_uri(murl) for murl in magnet_urls]
+    elif args.magnet:
+        work = [parse_magnet_uri(args.magnet)]
     elif args.torrent:
-        trackers, info_hash, size = parse_torrent(args.torrent)
+        work = [parse_torrent(args.torrent)]
     else:
         trackers = [args.tracker]
         info_hash = args.hash
         size = 0
+        work = [(trackers, info_hash, size)]
 
-    ipv6_addresses = []
-    for t in trackers:
-        print "Annoucing for {0} on {1}".format(binascii.b2a_hex(info_hash), t)
-        found_addrs = ips_for_tracker(hash=info_hash, tracker=t, ip=args.ip)
-        print " * Found {0} addresses".format(len(found_addrs))
-        ipv6_addresses += found_addrs
+    for trackers, info_hash, size in work:
+        for t in trackers:
+            print "Annoucing for {0} on {1}".format(binascii.b2a_hex(info_hash), t)
+            found_addrs = ips_for_tracker(hash=info_hash, tracker=t, ip=args.ip)
+            print " * Found {0} addresses".format(len(found_addrs))
+            for a in found_addrs:
+                output.write(a.exploded + "\n")
 
-    pprint(ipv6_addresses)
