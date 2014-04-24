@@ -98,24 +98,31 @@ def udp_parse_connection_response(buf, sent_transaction_id):
         raise RuntimeError("Error while trying to get a connection response: %s" % error)
     pass
 
+
+ip_cache = {}
+
 def udp_announce(tracker, torrent_hash, ip_address=None):
     parsed_tracker = urlparse.urlparse(tracker)
     transaction_id = "\x00\x00\x04\x12\x27\x10\x19\x70"
     connection_id = "\x00\x00\x04\x17\x27\x10\x19\x80"
     sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
     sock.settimeout(8)
-    ip_data = socket.getaddrinfo(parsed_tracker.hostname, parsed_tracker.port)
-    dest_ip = None
-    dest_port = None
-    for family, socktype, proto, canonname, sockaddr in ip_data:
-        if family == 10:
-            address, port, flow_info, scope_id = sockaddr
-            dest_ip = address
-            dest_port = port
-            break
-
-    if not dest_ip:
-        raise Exception("Unable to find IPv6 address for {0}".format(parsed_tracker.hostname))
+    key = "{0}:{1}".format(parsed_tracker.hostname, parsed_tracker.port)
+    try:
+        dest_ip, dest_port = ip_cache[key]
+    except KeyError:
+        ip_data = socket.getaddrinfo(parsed_tracker.hostname, parsed_tracker.port)
+        dest_ip = None
+        dest_port = None
+        for family, socktype, proto, canonname, sockaddr in ip_data:
+            if family == 10:
+                address, port, flow_info, scope_id = sockaddr
+                dest_ip = address
+                dest_port = port
+                break
+        if not dest_ip:
+            raise Exception("Unable to find IPv6 address for {0}".format(parsed_tracker.hostname))
+        ip_cache[key] = dest_ip, dest_port
 
     conn = (dest_ip, dest_port)
     #Get connection ID
@@ -194,8 +201,9 @@ def ips_for_tracker(**kwargs):
         try:
             return udp_announce(tracker, info_hash, ip_address=ip_address)
         except Exception, e:
+            if "Unable to find IPv6 address" not in e.message:
+              raise e
             print " ! {0}".format(e.message)
-            raise e
             return []
     elif parsed_tracker.scheme in ["http", "https"]:
         return http_announce(tracker, info_hash, ip_address=ip_address)
@@ -266,6 +274,8 @@ if __name__ == "__main__":
     parser.add_argument('--ip', help="The IPv6 address to report announcing from.", default=None)
     args = parser.parse_args()
 
+    total_ips = {}
+
     output = open(args.output, 'aw') if args.output else sys.stdout
 
     if args.magnetpage:
@@ -287,5 +297,7 @@ if __name__ == "__main__":
             found_addrs = ips_for_tracker(hash=info_hash, tracker=t, ip=args.ip)
             print " * Found {0} addresses".format(len(found_addrs))
             for a in found_addrs:
-                output.write(a.exploded + "\n")
+                if a.exploded not in total_ips:
+                    total_ips[a.exploded] = True
+                    output.write(a.exploded + "\n")
 

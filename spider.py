@@ -13,4 +13,4 @@ def magnet_uris_on_url(url):
         A list of strings for each magent uri found on the page
     """
     rs = requests.get(url)
-    return magnet_pattern.findall(rs.text)
+    return [u[:-1] for u in magnet_pattern.findall(rs.text)]
