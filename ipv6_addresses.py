@@ -195,6 +195,7 @@ def ips_for_tracker(**kwargs):
             return udp_announce(tracker, info_hash, ip_address=ip_address)
         except Exception, e:
             print " ! {0}".format(e.message)
+            raise e
             return []
     elif parsed_tracker.scheme in ["http", "https"]:
         return http_announce(tracker, info_hash, ip_address=ip_address)
